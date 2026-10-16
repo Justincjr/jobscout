@@ -35,7 +35,7 @@ export const sdkTransport: AiTransport = async (selection, schema, instruction, 
     assert(!result.output.some(item => item.type === 'message' && item.content.some(c => c.type === 'refusal')), 'The provider declined this request. Edit the input and retry.', 422);
     return { text: result.output_text, input: result.usage?.input_tokens ?? 0, output: result.usage?.output_tokens ?? 0 };
   }
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, baseURL: 'https://api.anthropic.com', fetchOptions: { redirect: 'error' }, maxRetries: 0, timeout: 90000 });
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, baseURL: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com', fetchOptions: { redirect: 'error' }, maxRetries: 0, timeout: 90000 });
   const result = await client.messages.create({
     model: selection.model, max_tokens: 8000, system, messages: [{ role: 'user', content }],
     output_config: { format: { type: 'json_schema', schema } },
