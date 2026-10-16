@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.server.json",
+  "compilerOptions": { "outDir": ".cache/tools", "rootDir": "." },
+  "include": ["scripts", "tests/helpers.ts", "src/server", "src/modules", "src/shared", "src/providers", "src/storage", "src/tasks"]
+}
