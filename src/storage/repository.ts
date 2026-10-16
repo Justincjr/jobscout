@@ -86,7 +86,13 @@ export class Repository {
         await fs.copyFile(this.file, backupPath);
       }
       await this.hooks.beforeRename?.();
-      await fs.rename(temp, this.file);
+      for (let attempt = 0; ; attempt++) {
+        try { await fs.rename(temp, this.file); break; }
+        catch (error) {
+          if (attempt >= 3 || !['EPERM', 'EACCES', 'EBUSY'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
+          await new Promise(resolve => setTimeout(resolve, 50 * 2 ** attempt));
+        }
+      }
     } catch (error) { await fs.unlink(temp).catch(() => undefined); throw error; }
     const backups = (await fs.readdir(path.join(this.directory, 'backups'))).filter(f => f.endsWith('.json')).sort().reverse();
     await Promise.all(backups.slice(8).map(name => fs.unlink(path.join(this.directory, 'backups', name)).catch(() => undefined)));

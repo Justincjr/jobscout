@@ -4,7 +4,7 @@
 
 Build a web application that helps a job seeker find relevant openings on company career sites, understand how each role matches their experience, and prepare accurate, tailored application materials.
 
-The core journey is: **confirm career profile → follow companies → discover jobs → review ranked matches → generate and edit application drafts → apply on the company website**.
+The core journey is: **confirm career profile → follow companies → discover jobs → review ranked matches → generate and edit application drafts → review application answers and attachments → approve one application → assistant submits and checks confirmation**.
 
 This document is a plan only. The first implementation is a local application for your personal use, with JSON file storage and both Anthropic and OpenAI support.
 
@@ -18,10 +18,10 @@ This document is a plan only. The first implementation is a local application fo
 - Discover openings from a user-selected company list and a small curated starter list. Internet-wide company discovery is outside the MVP.
 - Start with public Greenhouse and Lever job boards linked from company career sites. Clearly label unsupported sites and allow users to paste a job description for matching and drafting.
 - Offer manual refresh, refresh overdue sources at startup, and optionally refresh daily while the app is running. Nothing runs while the app is closed.
-- Generate an editable tailored resume and cover letter. Users review, export, and submit applications themselves.
+- Generate an editable tailored resume and cover letter. Users review the drafts and employer questions inside the app, then explicitly approve the exact application before the assistant submits it. Exports remain available.
 - Initial planning scale: one user, up to 50 company boards, and 10,000 active postings. These are capacity targets, not forecasts.
 
-**Excluded initially:** accounts, authentication services, multi-user access, hosted deployment, databases, cloud storage, automatic application submission, recruiter outreach, scraping login-protected sites, CAPTCHA bypass, general-purpose browser crawling, billing, mobile apps, interview coaching, and employer-facing candidate ranking.
+**Excluded initially:** accounts, authentication services, multi-user access, hosted deployment, databases, cloud storage, submission without per-application approval, recruiter outreach, scraping login-protected sites, CAPTCHA bypass, general-purpose browser crawling, billing, mobile apps, interview coaching, and employer-facing candidate ranking.
 
 ## 3. MVP features and acceptance criteria
 
@@ -38,6 +38,7 @@ This document is a plan only. The first implementation is a local application fo
 | Job review | Search/filter jobs; save, dismiss, and mark applied | Filters and saved state persist; official posting and application links are visible. |
 | Drafting | Generate a tailored resume and cover letter for one job | Generated factual claims trace to confirmed profile facts; unsupported claims block draft readiness. |
 | Export | Edit, copy, and download materials as PDF or plain text | Export preserves user edits, warns about unsupported edited claims, and uses a clean single-column layout. |
+| Approved submission | Prepare public employer questions, review answers and PDF attachments, then submit after explicit approval | Approval binds to saved draft revisions, posting, form and answers; changed inputs require review. Only a visible employer confirmation marks applied. Uncertain outcomes and interrupted submissions never retry automatically. Login, CAPTCHA, unsupported or multi-step forms pause for attention. |
 
 ## 4. Screens and user flow
 

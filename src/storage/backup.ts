@@ -4,6 +4,7 @@ import path from 'node:path';
 import { Repository, parseState } from './repository.js';
 import { assert } from '../shared/errors.js';
 import { State } from '../shared/schema.js';
+import { interruptSubmissions } from '../modules/applications/service.js';
 
 export async function createBackup(repo: Repository): Promise<Uint8Array> {
   const state = repo.read();
@@ -51,9 +52,11 @@ export async function restoreBackup(repo: Repository, restored: ReturnType<typeo
   try {
     await repo.update(state => {
       Object.assign(state, restored.state);
+      interruptSubmissions(state);
       for (const task of state.tasks) if (task.status === 'running' || task.status === 'queued') {
         task.status = 'interrupted'; task.error = 'Backup restored. Retry explicitly.'; task.finishedAt = new Date().toISOString();
       }
+      for (const ranking of state.rankings) if (ranking.status === 'running' || ranking.status === 'queued') { ranking.status = 'interrupted'; ranking.error = 'Backup restored. Retry ranking explicitly.'; }
     }, revision);
   } catch (error) { await Promise.all(staged.map(p => fs.unlink(path.join(repo.directory, p)).catch(() => undefined))); throw error; }
   const safetyArchives = (await fs.readdir(path.join(repo.directory, 'backups'))).filter(name => /^before-restore-\d+\.zip$/.test(name)).sort().reverse();

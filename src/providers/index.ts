@@ -68,3 +68,8 @@ export const Analysis = z.strictObject({ requirements: z.array(z.strictObject({
 export const DraftSelection = z.strictObject({
   resumeFactIds: z.array(z.string()), letterFactIds: z.array(z.string()),
 });
+export const RankOutput = z.strictObject({
+  score: z.number(), summary: z.string(),
+  strengths: z.array(z.strictObject({ factId: z.string(), factExcerpt: z.string(), jobExcerpt: z.string(), explanation: z.string() })),
+  gaps: z.array(z.string()), unknowns: z.array(z.string()),
+});

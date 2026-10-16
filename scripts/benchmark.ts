@@ -1,5 +1,6 @@
 import { performance } from 'node:perf_hooks';
 import http from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { Repository } from '../src/storage/repository.js';
 import { TaskEngine } from '../src/tasks/engine.js';
@@ -15,7 +16,10 @@ try {
   const start = performance.now();
   await repo.update(state => {
     Object.assign(state, confirmedState());
-    for (let i = 0; i < 10000; i++) addJob(state, { title: `Software Engineer ${i}`, externalId: String(i), description: 'Requirements\nExperience with React\nTypeScript\nResponsibilities\nBuild modern accessible dashboards.\nPreferred\nPython\n' + 'Detailed posting information. '.repeat(100) });
+    for (let i = 0; i < 10000; i++) {
+      const jobId = addJob(state, { title: `Software Engineer ${i}`, externalId: String(i), url: `https://example.com/job/${i}`, description: 'Requirements\nExperience with React\nTypeScript\nResponsibilities\nBuild modern accessible dashboards.\nPreferred\nPython\n' + 'Detailed posting information. '.repeat(100) });
+      state.rankings.push({ id: randomUUID(), jobId, snapshotId: state.jobs.at(-1)!.snapshotId, status: 'completed', selection: { provider: 'openai', model: 'gpt-4.1-mini' }, profileVersion: state.profileVersion, preferences: structuredClone(state.preferences), score: i % 101, summary: 'Synthetic saved assessment. No AI request was made.', strengths: [], gaps: [], unknowns: [], error: null, promptVersion: 'rank-v1', createdAt: new Date().toISOString(), completedAt: new Date().toISOString() });
+    }
     recompute(state);
   });
   const saveMs = performance.now() - start;

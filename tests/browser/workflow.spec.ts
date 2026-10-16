@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test';
 
 test('review profile → paste job → inspect evidence → edit/export → track application', async ({ page }) => {
+  const bootstrap = await (await page.request.get('/api/state')).json();
+  await page.request.post('/api/data/delete', { headers: { 'X-Scout-Token': bootstrap.token, 'X-Revision': String(bootstrap.state.revision) }, data: { confirmation: 'DELETE' } });
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Find your next chapter.' })).toBeVisible();
   await page.getByRole('button', { name: 'Career profile', exact: true }).click();

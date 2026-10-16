@@ -7,6 +7,9 @@ import { Repository } from '../src/storage/repository.js';
 import { TaskEngine } from '../src/tasks/engine.js';
 import { createApp } from '../src/server/app.js';
 import { removeTestDirectory, testDirectory } from './helpers.js';
+import { addJob, confirmedState } from './helpers.js';
+import { stageNewRanking } from '../src/modules/matching/ranking.js';
+import { recompute } from '../src/modules/matching/index.js';
 
 let repo: Repository, engine: TaskEngine, agent: ReturnType<typeof supertest>;
 const host = '127.0.0.1:4310';
@@ -56,6 +59,21 @@ describe('local HTTP security', () => {
 });
 
 describe('complete local workflow', () => {
+  it('sorts by saved LLM scores and exposes stale assessments without resending', async () => {
+    await repo.update(state => {
+      Object.assign(state, confirmedState());
+      for (const [title, score] of [['First AI match', 91], ['Second AI match', 34]] as const) {
+        const id = addJob(state, { title });
+        const job = state.jobs.find(j => j.id === id)!; stageNewRanking(state, id, job.snapshotId);
+        Object.assign(state.rankings.at(-1)!, { status: 'completed', score, summary: 'Synthetic assessment', selection: { provider: 'openai', model: 'gpt-4.1-mini' }, profileVersion: state.profileVersion, preferences: structuredClone(state.preferences), completedAt: new Date().toISOString() });
+      }
+      state.preferences.version++; recompute(state);
+    });
+    const response = await agent.get('/api/jobs').set('Host', host);
+    expect(response.body.items.map((row: { ranking: { score: number } }) => row.ranking.score)).toEqual([91, 34]);
+    expect(response.body.items.every((row: { rankingStale: boolean }) => row.rankingStale)).toBe(true);
+    expect(repo.read().usage).toEqual([]);
+  });
   it('unfollows and follows a company without losing its source identity', async () => {
     await send('/api/sources', { name: 'Acme', url: 'https://jobs.lever.co/acme' });
     const id = repo.read().sources[0].id;

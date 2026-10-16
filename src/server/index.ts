@@ -6,6 +6,9 @@ import express from 'express';
 import { Repository } from '../storage/repository.js';
 import { TaskEngine } from '../tasks/engine.js';
 import { createApp } from './app.js';
+import { migrateLegacyBoards } from '../modules/sources/index.js';
+import { ApplicationService, interruptSubmissions } from '../modules/applications/service.js';
+import { BrowserApplicationDriver } from '../modules/applications/browser.js';
 
 config({ path: '.env.local', quiet: true });
 const port = Number(process.env.PORT ?? 4310);
@@ -15,8 +18,11 @@ const projectRoot = root;
 const repo = new Repository(path.join(projectRoot, process.env.SCOUT_DATA_DIR ?? 'data'));
 try { await repo.open(); }
 catch (error) { console.error((error as Error).message); process.exit(1); }
+if (migrateLegacyBoards(repo.read())) await repo.update(state => { migrateLegacyBoards(state); });
+if (repo.read().submissions.some(p => p.status === 'preparing' || p.status === 'submitting')) await repo.update(interruptSubmissions);
 const engine = new TaskEngine(repo);
-const app = createApp(repo, engine, port);
+const submissions = new ApplicationService(repo, new BrowserApplicationDriver());
+const app = createApp(repo, engine, port, submissions);
 if (import.meta.url.endsWith('.ts')) {
   const { createServer } = await import('vite');
   const vite = await createServer({ configFile: path.join(projectRoot, 'vite.config.ts'), server: { middlewareMode: true, hmr: false }, appType: 'spa' });
@@ -29,6 +35,6 @@ if (import.meta.url.endsWith('.ts')) {
 const server = app.listen(port, '127.0.0.1', () => { console.log(`Job Scout is ready at http://127.0.0.1:${port}`); void engine.start().catch(() => console.error('Startup refresh could not be scheduled. Try a manual refresh.')); });
 server.on('error', async () => { console.error('Could not open the local port. Stop the existing app or choose another PORT.'); await engine.pause(); await repo.close(); process.exit(1); });
 let closing = false;
-const shutdown = async () => { if (closing) return; closing = true; server.close(); await engine.pause(); await repo.close(); process.exit(0); };
+const shutdown = async () => { if (closing) return; closing = true; server.close(); await submissions.drain(); await engine.pause(); await repo.close(); process.exit(0); };
 process.on('SIGINT', () => { void shutdown(); });
 process.on('SIGTERM', () => { void shutdown(); });

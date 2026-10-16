@@ -9,11 +9,14 @@ import { AppError, assert } from '../shared/errors.js';
 import { Id, FactKind, Preferences, Settings, Selection, State, initialState, profileReady } from '../shared/schema.js';
 import { bumpProfile, newFact } from '../modules/profile/index.js';
 import { recompute } from '../modules/matching/index.js';
+import { rankingStale, stageNewRanking } from '../modules/matching/ranking.js';
 import { IncomingJob, makeSnapshot, parseBoard, safeUrl, starterBoards } from '../modules/sources/index.js';
 import { saveDocument } from '../modules/profile/documents.js';
 import { createDrafts, exportPdf, validateClaims } from '../modules/drafts/index.js';
 import { providerStatus } from '../providers/index.js';
 import { createBackup, readBackup, restoreBackup } from '../storage/backup.js';
+import { ApplicationService } from '../modules/applications/service.js';
+import { BrowserApplicationDriver } from '../modules/applications/browser.js';
 
 const date = () => new Date().toISOString();
 function expected(req: Request): number {
@@ -23,7 +26,7 @@ function expected(req: Request): number {
 }
 const factInput = z.strictObject({ kind: FactKind, value: z.string().trim().min(1).max(4000), excerpt: z.string().max(8000).optional() });
 
-export function createApp(repo: Repository, engine: TaskEngine, port: number) {
+export function createApp(repo: Repository, engine: TaskEngine, port: number, submissions = new ApplicationService(repo, new BrowserApplicationDriver())) {
   const app = express();
   const token = randomUUID();
   app.disable('x-powered-by');
@@ -39,6 +42,7 @@ export function createApp(repo: Repository, engine: TaskEngine, port: number) {
       if (!['GET', 'HEAD'].includes(req.method)) {
         const supplied = Buffer.from(req.get('X-Scout-Token') ?? '');
         if (supplied.length !== token.length || !timingSafeEqual(supplied, Buffer.from(token))) return res.status(403).json({ error: 'Local session expired. Reload the page.' });
+        res.on('finish', () => engine.wake());
       }
     }
     next();
@@ -54,7 +58,8 @@ export function createApp(repo: Repository, engine: TaskEngine, port: number) {
   app.get('/api/jobs/:id', (req, res) => {
     const state = repo.read(), job = state.jobs.find(j => j.id === req.params.id);
     assert(job, 'Job not found.', 404);
-    res.json({ job, snapshot: state.snapshots.find(s => s.id === job.snapshotId), match: state.matches.find(m => m.jobId === job.id), application: state.applications.find(a => a.jobId === job.id) });
+    const ranking = state.rankings.find(r => r.jobId === job.id);
+    res.json({ job, snapshot: state.snapshots.find(s => s.id === job.snapshotId), match: state.matches.find(m => m.jobId === job.id), application: state.applications.find(a => a.jobId === job.id), ranking, rankingStale: ranking ? rankingStale(state, ranking, job.snapshotId) : false });
   });
   app.get('/api/health', (_req, res) => res.json({ ok: true }));
   app.get('/api/jobs', (req, res) => {
@@ -63,6 +68,7 @@ export function createApp(repo: Repository, engine: TaskEngine, port: number) {
     const snapshots = new Map(state.snapshots.map(s => [s.id, s]));
     const matches = new Map(state.matches.map(m => [m.jobId, m]));
     const apps = new Map(state.applications.map(a => [a.jobId, a]));
+    const rankings = new Map(state.rankings.map(r => [r.jobId, r]));
     const rows = state.jobs.flatMap(job => {
       const snapshot = snapshots.get(job.snapshotId)!;
       const match = matches.get(job.id), application = apps.get(job.id);
@@ -71,9 +77,11 @@ export function createApp(repo: Repository, engine: TaskEngine, port: number) {
       if (query.showIneligible !== 'true' && match?.eligibility === 'ineligible') return [];
       if (!`${snapshot.title} ${snapshot.company} ${snapshot.description}`.toLowerCase().includes(query.search.toLowerCase())) return [];
       if (!(snapshot.location ?? '').toLowerCase().includes(query.location.toLowerCase())) return [];
-      return [{ job, snapshot: { ...snapshot, description: '', requirements: [] }, match, application }];
+      const ranking = rankings.get(job.id);
+      return [{ job, snapshot: { ...snapshot, description: '', requirements: [] }, match, application, ranking, rankingStale: ranking ? rankingStale(state, ranking, job.snapshotId) : false }];
     });
-    rows.sort((a, b) => Number((b.match?.coverage ?? 0) >= 50) - Number((a.match?.coverage ?? 0) >= 50) || (b.match?.score ?? -1) - (a.match?.score ?? -1) || b.job.lastSeen.localeCompare(a.job.lastSeen));
+    const score = (row: typeof rows[number]) => row.ranking ? row.ranking.score ?? -1 : row.match?.score ?? -1;
+    rows.sort((a, b) => Number(b.ranking?.status === 'completed') - Number(a.ranking?.status === 'completed') || score(b) - score(a) || b.job.lastSeen.localeCompare(a.job.lastSeen));
     res.json({ total: rows.length, items: rows.slice((query.page - 1) * 30, query.page * 30), revision: state.revision });
   });
   app.put('/api/settings', async (req, res) => res.json(await repo.update(s => { s.settings = Settings.parse(req.body); }, expected(req))));
@@ -136,7 +144,9 @@ export function createApp(repo: Repository, engine: TaskEngine, port: number) {
     const snapshot = makeSnapshot(incoming);
     res.json(await repo.update(s => {
       s.snapshots.push(snapshot);
-      s.jobs.push({ id: randomUUID(), sourceId: null, externalId: incoming.externalId, snapshotId: snapshot.id, firstSeen: date(), lastSeen: date(), active: true, missingCount: 0, possibleDuplicate: null });
+      const id = randomUUID();
+      s.jobs.push({ id, sourceId: null, externalId: incoming.externalId, snapshotId: snapshot.id, firstSeen: date(), lastSeen: date(), active: true, missingCount: 0, possibleDuplicate: null });
+      stageNewRanking(s, id, snapshot.id);
       recompute(s);
     }, expected(req)));
   });
@@ -152,7 +162,7 @@ export function createApp(repo: Repository, engine: TaskEngine, port: number) {
     }, expected(req)));
   });
   app.post('/api/tasks', async (req, res) => {
-    const input = z.strictObject({ kind: z.enum(['refresh', 'extract', 'analyze', 'draft', 'smoke']), targetId: Id.nullable(), selection: Selection.optional() }).parse(req.body);
+    const input = z.strictObject({ kind: z.enum(['refresh', 'extract', 'analyze', 'draft', 'smoke', 'rank']), targetId: Id.nullable(), selection: Selection.optional() }).parse(req.body);
     res.status(202).json(await engine.enqueue(input.kind, input.targetId, input.selection));
   });
   app.post('/api/drafts/manual', async (req, res) => {
@@ -164,6 +174,21 @@ export function createApp(repo: Repository, engine: TaskEngine, port: number) {
       const facts = s.profileVersions.find(v => v.version === s.profileVersion)!.facts;
       s.drafts.push(...createDrafts(s, job.id, snapshot, s.profileVersion, facts, { resumeFactIds: facts.map(f => f.id), letterFactIds: facts.filter(f => f.kind === 'experience' || f.kind === 'achievement').map(f => f.id) }, null));
     }, expected(req)));
+  });
+  app.post('/api/applications/:jobId/prepare', async (req, res) => {
+    res.status(202).json(await submissions.prepare(Id.parse(req.params.jobId), expected(req)));
+  });
+  app.put('/api/submissions/:id', async (req, res) => {
+    const input = z.strictObject({ fields: z.array(z.strictObject({ index: z.number().int().nonnegative(), value: z.string().max(60000), attachment: z.enum(['', 'resume', 'cover-letter']) })).max(150) }).parse(req.body);
+    await submissions.save(Id.parse(req.params.id), input.fields, expected(req)); res.json({ ok: true });
+  });
+  app.post('/api/submissions/:id/approve', async (req, res) => {
+    const input = z.strictObject({ reviewToken: z.string().uuid(), approval: z.literal('APPROVE_AND_SUBMIT') }).parse(req.body);
+    await submissions.approve(Id.parse(req.params.id), input.reviewToken, expected(req)); res.status(202).json({ ok: true });
+  });
+  app.post('/api/submissions/:id/resolve', async (req, res) => {
+    const input = z.strictObject({ outcome: z.enum(['submitted', 'not-submitted']), confirmation: z.literal('I_CHECKED_WITH_EMPLOYER') }).parse(req.body);
+    await submissions.resolve(Id.parse(req.params.id), input.outcome, expected(req)); res.json({ ok: true });
   });
   app.put('/api/drafts/:id', async (req, res) => {
     const id = Id.parse(req.params.id);
@@ -192,6 +217,7 @@ export function createApp(repo: Repository, engine: TaskEngine, port: number) {
   });
   app.get('/api/backup', async (_req, res) => res.set({ 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="job-scout-backup.zip"' }).send(Buffer.from(await createBackup(repo))));
   app.post('/api/restore', async (req, res) => {
+    assert(!submissions.busy, 'Wait for application preparation or submission to finish before restoring.', 409);
     const input = z.strictObject({ archive: z.string().max(54000000), confirmation: z.literal('RESTORE') }).parse(req.body);
     const backup = readBackup(Buffer.from(input.archive, 'base64'));
     assert(expected(req) === repo.read().revision, 'Local data changed. Review and retry restore.', 409);
@@ -200,6 +226,7 @@ export function createApp(repo: Repository, engine: TaskEngine, port: number) {
     finally { engine.resume(); }
   });
   app.post('/api/data/delete', async (req, res) => {
+    assert(!submissions.busy, 'Wait for application preparation or submission to finish before deleting data.', 409);
     z.strictObject({ confirmation: z.literal('DELETE') }).parse(req.body);
     assert(expected(req) === repo.read().revision, 'Local data changed. Review and retry deletion.', 409);
     await engine.pause();

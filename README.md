@@ -4,7 +4,7 @@ A personal, local job-search workspace built from [plan.md](plan.md). React and 
 
 ## Start on Windows
 
-Install Node.js 24 LTS (minimum 22.16), then open PowerShell in this folder:
+Install Node.js 24 LTS or later, then open PowerShell in this folder:
 
 ```powershell
 npm ci
@@ -35,13 +35,13 @@ Keys are read only by the server. They are excluded from browser responses, logs
 1. **Career profile:** paste a resume or upload a text-based PDF (5 MB / 40 pages maximum). Save locally, then choose Extract facts if you want AI extraction. Alternatively, enter individual facts manually. Extracted facts must reproduce source passages and start unconfirmed.
 2. Review the text and source excerpt for each fact. Select only facts you have checked and confirm them. Personalized matching and drafts require at least one confirmed experience fact and one confirmed skill. An edit revokes that fact's confirmation. Older confirmed snapshots remain attached to older drafts.
 3. **Preferences:** set roles, locations, work mode, seniority, annual compensation/currency, and optional authorization constraints. Commas separate acceptable alternatives. Empty values mean no preference. Mark essential preferences as hard constraints; unknown posting information needs review and stays visible.
-4. **Companies:** add a public Greenhouse or Lever board, or follow a starter company. Refresh to verify connectivity and retrieve jobs. Unfollow a company to stop refreshes while retaining its jobs and drafts; follow it again at any time. Failed or partial results never establish closure; a job must be absent from two complete successful refreshes before becoming inactive.
+4. **Companies:** add Greenhouse, Lever, Ashby (`jobs.ashbyhq.com/company`), Workday (`*.myworkdayjobs.com/site`), Shopee, or a public company career page, or follow a starter company. Refresh to verify connectivity and retrieve jobs. Unfollow a company to stop refreshes while retaining its jobs and drafts; follow it again at any time. Failed or partial results never establish closure; a job must be absent from two complete successful refreshes before becoming inactive.
 5. **Discover:** search and filter, save or dismiss jobs, and inspect the evidence behind each score. Unsupported sites can be added through **Add a job** by pasting a description; their freshness is explicitly unknown. Save filters to persist them.
-6. Open a role's **Evidence** tab. Local requirement extraction and a controlled skill-alias list work offline. Optional AI analysis extracts verbatim requirement passages. Scores use the documented 40/25/15/10/10 rubric and show separate coverage. Partial evidence never establishes an employment duration, credential, or responsibility merely from a skill mention.
+6. **LLM ranking:** newly discovered and manually added jobs are sent once to your selected AI provider when you have a confirmed profile, consent, a configured key, and available budget. The model returns a 0–100 alignment score, summary, strengths with exact profile/job excerpts, gaps, and unknowns. Saved AI scores determine feed order. Refreshes, restarts, provider changes, and profile/preference edits never automatically send a completed posting again. Changed inputs are labeled stale. Failed/interrupted requests require an explicit retry. Jobs that existed before this feature are not automatically backfilled; their Evidence tab offers an explicit Rank this job action. Local constraint and keyword checks remain visible separately.
 7. In **Application workspace**, choose the provider/model for that draft or create drafts from confirmed facts without AI. AI selects and orders fact IDs; factual wording is copied from the immutable confirmed profile. Edit, save a revision, inspect warnings and references, and mark your review complete before exporting PDF or text. Unsupported edited lines require explicit acknowledgment before export. PDF uses a clean single column; if characters cannot be represented by the built-in font, use UTF-8 plain text.
-8. Apply yourself through the visible company-site link. Record the actual application date and status. No applications or messages are submitted automatically.
+8. **Approved application submission:** choose **Draft application** inside a role. Generate or create both drafts, review their Resume and Cover letter tabs, and save each as reviewed. Choose **Prepare application** to read the public employer form. Enter contact details and screening answers; select the reviewed resume/letter PDFs for attachment and inspect their previews. Save answers, check the approval statement, and choose **Approve and submit application**. This authorizes only that saved application. Only a visible employer confirmation marks it applied. If the outcome is uncertain, check the employer's receipt/history and explicitly reconcile it before retrying. No recruiter messages are sent.
 
-AI extraction sends resume text; analysis sends the job description; drafting sends the job and confirmed career facts to the chosen provider. Recognized email addresses, likely phone numbers, and profile links are removed from resume/profile prompts. This is not a complete personal-data detector: inspect your content first. Manual profile review, saved jobs, matching, existing drafts, and exports work without external AI access.
+AI extraction sends resume text; analysis sends the job description; ranking and drafting send the job, confirmed career facts, and relevant preferences to the chosen provider. Recognized email addresses, likely phone numbers, and profile links are removed from resume/profile prompts. This is not a complete personal-data detector: inspect your content first. Manual profile review, saved jobs, local checks, saved AI rankings, existing drafts, and exports work without external AI access.
 
 ## Local storage, recovery, and deletion
 
@@ -55,6 +55,8 @@ AI extraction sends resume text; analysis sends the job description; drafting se
 
 Startup refreshes overdue sources. The optional daily refresh operates only while the server runs. AI work is serialized, snapshotted to its selected model, cached by input/provider/model/prompt/schema versions, and bounded by UTC daily request/token budgets. Failed calls retain a conservative token reservation when usage is uncertain. Restarted AI calls are marked interrupted and require an explicit retry, because they may have been billed.
 
+Greenhouse feeds allow up to 20 MB because they include all full job descriptions in one response; other career requests retain the 5 MB default. Plaid's retired Lever starter is updated to its Ashby board on startup when that source has no imported jobs. The source ID, follow preference, and task history are retained.
+
 ## Verify
 
 ```powershell
@@ -62,13 +64,12 @@ npm test                 # mocked provider, storage, sources, matching, draft an
 npm run build            # strict type checks and production build
 npm run benchmark        # creates/removes a synthetic 10,000-job dataset under .cache/
 npm run test:live         # opt-in small calls, only for providers with configured keys
+npm run test:sources:live # opt-in public Shopee pagination and one Workday detail check
 ```
 
-For repeatable browser tests, install the test browser into this project and run:
+Application automation and repeatable browser tests use installed Microsoft Edge. Run:
 
 ```powershell
-$env:PLAYWRIGHT_BROWSERS_PATH = "$PWD\.cache\playwright"
-npx playwright install chromium
 npm run build
 npm run test:browser
 ```
@@ -84,4 +85,16 @@ See [IMPLEMENTATION.md](IMPLEMENTATION.md) for measured verification results, re
 - [Greenhouse Job Board API](https://docs.greenhouse.io/job-board)
 - [Lever public postings](https://github.com/lever/postings-api)
 
-Job sources only use their public GET endpoints. No employer application-submission API, private board, login scraping, or general crawling is implemented.
+Shopee uses the public job feed referenced by its careers page. Listing filters such as `level=4` are mapped to `employment_ids=4`; pagination parameters do not limit the saved source to one page. The supplied URL therefore follows internships across the locations returned by that feed; it does not impose a Singapore-only location constraint.
+
+Workday uses its public career-site JSON interface (including read-only POST search). Up to 100 new posting details are imported per refresh; repeat refreshes continue the import and reuse existing details. Sources reporting 2,000 results are treated as potentially capped, so missing jobs cannot establish closure. Existing Workday descriptions are cached; changes to their list title/location are updated, but description-only edits are not detected automatically.
+
+Other public company pages support Schema.org JobPosting JSON-LD and a conservative HTML fallback for readable linked job pages. Requests honor robots rules, stay on the approved origin, import at most 25 new linked pages per refresh, pin validated public DNS addresses, reject redirects, and enforce time/size limits. These imports are always partial and cannot automatically close jobs. Existing linked detail text is cached, so description-only edits may not be detected. JavaScript-only sites, login requirements, or blocked pages need a dedicated integration or pasted description; this is not universal website support.
+
+Production requests use the operating system's trusted certificate store through Node's `--use-system-ca`; certificate validation remains enabled. Application preparation uses a separate, temporary Edge session. It does not reuse your signed-in browser. The browser's HTTPS proxy pins validated public DNS addresses and blocks private destinations. Preparation blocks writes except read-only GraphQL queries; applicant answers and attachments are transmitted only after approval. Saved answers, approvals and receipts are personal local data included in backups.
+
+Submission supports readable single-page public forms, including embedded Greenhouse and Ashby's native inputs, yes/no controls and grouped choices. The Stripe Greenhouse embed and a Plaid Ashby form were checked read-only. Searchable employer choices need their exact visible names; unsupported controls, changed/conditional questions, required logins, multi-step applications, CAPTCHA challenges and missing confirmation stop progress or require attention. This is not universal support for every site's application flow; Workday and Shopee account flows may require a dedicated integration. No live employer application was submitted during development; actual submission is tested against synthetic employer pages. Draft PDFs currently require grounded text and supported Latin-font characters.
+
+- [Schema.org JobPosting](https://schema.org/JobPosting)
+- [Shopee career listing used for verification](https://careers.shopee.sg/jobs?level=4&limit=50&offset=0)
+- [Public Workday career site used for verification](https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite)

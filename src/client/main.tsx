@@ -70,7 +70,7 @@ function App() {
       <main>{page === 'profile' ? <Profile {...props}/> : page === 'companies' ? <Companies {...props}/> : page === 'preferences' ? <PreferencesScreen {...props}/> : page === 'settings' ? <SettingsScreen {...props}/> : <Feed {...props} applications={page === 'applications'} confirmed={confirmed}/>}</main>
       <footer><span>JOB SCOUT</span> A thoughtful next move.<span className="footer-right">Your search. Your story. Your next chapter.</span></footer>
     </div>
-    {tasks.length > 0 && <div className="task-progress" role="status"><span className="spinner"/>{tasks[0].kind === 'refresh' ? 'Refreshing company board' : tasks[0].kind === 'draft' ? 'Preparing grounded drafts' : 'Processing'}<small>{tasks.length} task{tasks.length > 1 ? 's' : ''} · safe to navigate</small></div>}
+    {tasks.length > 0 && <div className="task-progress" role="status"><span className="spinner"/>{tasks[0].kind === 'refresh' ? 'Refreshing company board' : tasks[0].kind === 'draft' ? 'Preparing grounded drafts' : tasks[0].kind === 'rank' ? 'Ranking a new job with AI' : 'Processing'}<small>{tasks.length} task{tasks.length > 1 ? 's' : ''} · safe to navigate</small></div>}
     {toast && <div className="toast" role="status">{toast}<button aria-label="Dismiss notification" onClick={() => setToast('')}><Icon name="close" size={16}/></button></div>}
   </div>;
 }

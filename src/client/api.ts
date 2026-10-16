@@ -1,7 +1,7 @@
-import { Application, Job, Match, Snapshot, State } from '../shared/schema';
+import { Application, Job, Match, Ranking, Snapshot, State } from '../shared/schema';
 import { z } from 'zod';
 
-export type JobRow = { job: Job; snapshot: Snapshot; match?: Match; application?: z.infer<typeof Application> };
+export type JobRow = { job: Job; snapshot: Snapshot; match?: Match; application?: z.infer<typeof Application>; ranking?: Ranking; rankingStale?: boolean };
 export type Bootstrap = { state: State; token: string; providers: { openai: boolean; anthropic: boolean }; starters: { name: string; url: string }[]; stats: { active: number; saved: number; applied: number } };
 export async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, options);

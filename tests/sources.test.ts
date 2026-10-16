@@ -7,7 +7,7 @@ describe('safe job discovery', () => {
   it('keeps an unstated requirement category unclear', () => {
     expect(localRequirements('Our team builds React applications.')[0].category).toBe('unclear');
   });
-  it.each(['http://127.0.0.1/board', 'https://jobs.lever.co.evil.com/name', 'https://user:pass@jobs.lever.co/name', 'https://jobs.lever.co:444/name', 'https://example.com/careers', 'https://jobs.lever.co/'])('rejects unsupported or malicious URL %s', url => expect(() => parseBoard('Acme', url)).toThrow());
+  it.each(['http://127.0.0.1/board', 'https://jobs.lever.co.evil.com/name', 'https://user:pass@jobs.lever.co/name', 'https://jobs.lever.co:444/name', 'https://localhost/careers', 'https://jobs.lever.co/'])('rejects unsupported or malicious URL %s', url => expect(() => parseBoard('Acme', url)).toThrow());
   it.each(['127.0.0.1', '169.254.169.254', '10.0.0.1', '172.16.1.2', '192.168.1.1', '::1', 'fd00::1', '::ffff:127.0.0.1'])('blocks private address %s', ip => expect(privateAddress(ip)).toBe(true));
   it('recognizes all supported board hosts and safe link schemes', () => {
     expect(parseBoard('Acme', 'https://job-boards.greenhouse.io/acme/jobs/123').board).toBe('acme');
